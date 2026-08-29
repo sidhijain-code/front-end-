@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WeatherGPT — Conversational Weather Intelligence</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root{
+  --sky-deep:#0E1826;
+  --sky-panel:#16233A;
+  --sky-panel-2:#1C2C46;
+  --line-faint:rgba(233,238,246,0.08);
+  --line-mid:rgba(233,238,246,0.14);
+  --cloud:#EBF0F7;
+  --cloud-dim:#9AACC4;
+  --amber:#E8A33D;
+  --amber-dim:#B8823A;
+  --teal:#57B3AC;
+  --coral:#E86A52;
+  --radius:14px;
+  --font-display:'Space Grotesk',sans-serif;
+  --font-body:'Inter',sans-serif;
+  --font-mono:'JetBrains Mono',monospace;
+}
+
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{
+  background:var(--sky-deep);
+  color:var(--cloud);
+  font-family:var(--font-body);
+  overflow:hidden;
+  position:relative;
+}
+
+/* ---------- isobar background ---------- */
+#isobars{
+  position:fixed;inset:0;z-index:0;opacity:0.35;pointer-events:none;
+}
+#isobars path{
+  fill:none;stroke:var(--line-mid);stroke-width:1;
+}
+#isobars .drift{
+  animation:driftIso 60s linear infinite;
+}
+@keyframes driftIso{
+  0%{ transform:translateX(0) translateY(0); }
+  100%{ transform:translateX(-60px) translateY(-30px); }
+}
+
+.app{
+  position:relative;z-index:1;
+  height:100vh;
+  display:flex;flex-direction:column;
+}
+
+/* ---------- header ---------- */
+header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 20px;
+  border-bottom:1px solid var(--line-faint);
+  background:linear-gradient(180deg, rgba(14,24,38,0.9), rgba(14,24,38,0.6));
+  backdrop-filter:blur(6px);
+  flex-shrink:0;
+}
+.brand{display:flex;align-items:center;gap:10px;}
+.brand-mark{
+  width:30px;height:30px;position:relative;flex-shrink:0;
+}
+.brand-mark svg{width:100%;height:100%;}
+.brand-name{
+  font-family:var(--font-display);font-weight:700;font-size:17px;letter-spacing:-0.01em;
+}
+.brand-name .gpt{color:var(--amber);}
+
+.loc-select{
+  display:flex;align-items:center;gap:6px;
+  background:var(--sky-panel);border:1px solid var(--line-mid);
+  border-radius:20px;padding:6px 12px;
+  font-family:var(--font-mono);font-size:12px;color:var(--cloud-dim);
+  cursor:pointer;
+}
+.loc-select select{
+  background:transparent;border:none;color:var(--cloud);
+  font-family:var(--font-mono);font-size:12px;outline:none;
+}
+.loc-select select option{background:var(--sky-panel);color:var(--cloud);}
+
+/* ---------- layout ---------- */
+.body-grid{
+  flex:1;display:flex;overflow:hidden;
+}
+
+/* ---------- console (conditions panel) ---------- */
+.console{
+  width:290px;flex-shrink:0;
+  border-right:1px solid var(--line-faint);
+  overflow-y:auto;
+  padding:18px 16px 24px;
+  display:flex;flex-direction:column;gap:18px;
+}
+.console::-webkit-scrollbar{width:6px;}
+.console::-webkit-scrollbar-thumb{background:var(--line-mid);border-radius:3px;}
+
+.eyebrow{
+  font-family:var(--font-mono);font-size:10px;letter-spacing:0.12em;
+  color:var(--cloud-dim);text-transform:uppercase;margin-bottom:8px;
+}
+
+.now-card{
+  background:linear-gradient(155deg, var(--sky-panel-2), var(--sky-panel));
+  border:1px solid var(--line-mid);
+  border-radius:var(--radius);
+  padding:18px;
+  position:relative;overflow:hidden;
+}
+.now-top{display:flex;justify-content:space-between;align-items:flex-start;}
+.now-temp{
+  font-family:var(--font-display);font-size:44px;font-weight:600;line-height:1;
+}
+.now-temp sup{font-size:20px;font-weight:500;color:var(--cloud-dim);}
+.now-cond{font-size:12.5px;color:var(--cloud-dim);margin-top:6px;}
+.now-icon{width:42px;height:42px;}
+.now-meta{
+  display:flex;gap:16px;margin-top:14px;padding-top:12px;
+  border-top:1px solid var(--line-faint);
+  font-family:var(--font-mono);font-size:11px;color:var(--cloud-dim);
+}
+.now-meta div span{display:block;color:var(--cloud);font-size:13px;margin-top:2px;}
+
+.hourly-strip{display:flex;gap:2px;overflow-x:auto;padding-bottom:4px;}
+.hourly-strip::-webkit-scrollbar{height:4px;}
+.hour-col{
+  min-width:44px;display:flex;flex-direction:column;align-items:center;gap:6px;
+  padding:8px 4px;border-radius:8px;
+}
+.hour-col:hover{background:var(--line-faint);}
+.hour-t{font-family:var(--font-mono);font-size:10px;color:var(--cloud-dim);}
+.hour-temp{font-family:var(--font-mono);font-size:12px;color:var(--cloud);font-weight:500;}
+.hour-bar{width:3px;border-radius:2px;background:var(--amber);opacity:0.7;}
+
+.alert-item{
+  border:1px solid rgba(232,106,82,0.35);
+  background:rgba(232,106,82,0.08);
+  border-radius:10px;padding:10px 12px;
+  display:flex;gap:10px;align-items:flex-start;
+  cursor:pointer;
+}
+.alert-dot{
+  width:7px;height:7px;border-radius:50%;background:var(--coral);
+  margin-top:5px;flex-shrink:0;
+  box-shadow:0 0 0 3px rgba(232,106,82,0.18);
+}
+.alert-item h4{font-size:12.5px;font-weight:600;color:var(--coral);margin-bottom:2px;}
+.alert-item p{font-size:11.5px;color:var(--cloud-dim);line-height:1.4;}
+
+.no-alerts{
+  font-size:12px;color:var(--cloud-dim);
+  border:1px dashed var(--line-mid);border-radius:10px;padding:14px;text-align:center;
+}
+
+/* ---------- chat panel ---------- */
+.chat{
+  flex:1;display:flex;flex-direction:column;min-width:0;
+}
+.chat-scroll{
+  flex:1;overflow-y:auto;padding:24px 24px 12px;
+  display:flex;flex-direction:column;gap:18px;
+}
+.chat-scroll::-webkit-scrollbar{width:6px;}
+.chat-scroll::-webkit-scrollbar-thumb{background:var(--line-mid);border-radius:3px;}
+
+.msg{max-width:640px;display:flex;flex-direction:column;gap:6px;}
+.msg.user{align-self:flex-end;align-items:flex-end;}
+.msg.bot{align-self:flex-start;}
+
+.msg-label{
+  font-family:var(--font-mono);font-size:10px;color:var(--cloud-dim);
+  letter-spacing:0.08em;text-transform:uppercase;padding:0 2px;
+}
+.bubble{
+  padding:12px 15px;border-radius:12px;font-size:14.5px;line-height:1.55;
+}
+.msg.user .bubble{
+  background:var(--sky-panel-2);border:1px solid var(--line-mid);
+  border-bottom-right-radius:3px;
+}
+.msg.bot .bubble{
+  background:transparent;border:1px solid var(--line-faint);
+  border-bottom-left-radius:3px;
+  border-left:2px solid var(--amber);
+}
+
+.data-card{
+  margin-top:2px;
+  background:var(--sky-panel);border:1px solid var(--line-mid);
+  border-radius:12px;overflow:hidden;
+}
+.data-card .dc-head{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:10px 14px;border-bottom:1px solid var(--line-faint);
+  font-family:var(--font-mono);font-size:10.5px;color:var(--cloud-dim);
+  letter-spacing:0.06em;text-transform:uppercase;
+}
+.dc-grid{display:grid;grid-template-columns:repeat(4,1fr);}
+.dc-cell{
+  padding:12px 10px;text-align:center;border-right:1px solid var(--line-faint);
+}
+.dc-cell:last-child{border-right:none;}
+.dc-cell .d-day{font-size:10.5px;color:var(--cloud-dim);margin-bottom:6px;font-family:var(--font-mono);}
+.dc-cell .d-temp{font-family:var(--font-mono);font-size:14px;font-weight:600;}
+.dc-cell .d-temp .lo{color:var(--cloud-dim);font-weight:400;font-size:11.5px;}
+.dc-cell svg{width:20px;height:20px;margin:4px auto;display:block;}
+
+.alert-card{
+  border-left:2px solid var(--coral) !important;
+  background:rgba(232,106,82,0.06);
+}
+.alert-card .dc-head{color:var(--coral);}
+
+.typing{
+  display:flex;gap:4px;padding:12px 15px;
+  border:1px solid var(--line-faint);border-left:2px solid var(--amber);
+  border-radius:12px;border-bottom-left-radius:3px;width:fit-content;
+}
+.typing span{
+  width:5px;height:5px;border-radius:50%;background:var(--cloud-dim);
+  animation:blink 1.2s infinite ease-in-out;
+}
+.typing span:nth-child(2){animation-delay:0.2s;}
+.typing span:nth-child(3){animation-delay:0.4s;}
+@keyframes blink{0%,80%,100%{opacity:0.25;}40%{opacity:1;}}
+
+/* ---------- suggestions + input ---------- */
+.suggestions{
+  display:flex;gap:8px;padding:0 24px 10px;overflow-x:auto;flex-shrink:0;
+}
+.suggestions::-webkit-scrollbar{display:none;}
+.chip{
+  font-family:var(--font-mono);font-size:11.5px;color:var(--cloud-dim);
+  border:1px solid var(--line-mid);background:var(--sky-panel);
+  padding:7px 13px;border-radius:20px;white-space:nowrap;cursor:pointer;
+  transition:border-color 0.15s, color 0.15s;
+}
+.chip:hover{border-color:var(--amber-dim);color:var(--cloud);}
+
+.input-bar{
+  display:flex;gap:10px;align-items:center;
+  padding:14px 24px 20px;flex-shrink:0;
+  border-top:1px solid var(--line-faint);
+}
+.input-bar input{
+  flex:1;background:var(--sky-panel);border:1px solid var(--line-mid);
+  border-radius:24px;padding:13px 18px;color:var(--cloud);
+  font-family:var(--font-body);font-size:14.5px;outline:none;
+}
+.input-bar input:focus{border-color:var(--amber-dim);}
+.input-bar input::placeholder{color:var(--cloud-dim);}
+.send-btn{
+  width:42px;height:42px;border-radius:50%;flex-shrink:0;
+  background:var(--amber);border:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:transform 0.12s;
+}
+.send-btn:hover{transform:scale(1.06);}
+.send-btn:active{transform:scale(0.94);}
+.send-btn svg{width:17px;height:17px;}
+
+/* ---------- mobile ---------- */
+@media (max-width:780px){
+  .body-grid{flex-direction:column;}
+  .console{
+    width:100%;border-right:none;border-bottom:1px solid var(--line-faint);
+    flex-direction:row;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;
+    padding:14px 14px 14px;gap:12px;align-items:stretch;
+  }
+  .console-section{min-width:250px;flex-shrink:0;}
+  .console-section.alerts-section{min-width:220px;}
+  .now-card{min-width:230px;}
+  .chat-scroll{padding:18px 14px 10px;}
+  .suggestions{padding:0 14px 10px;}
+  .input-bar{padding:12px 14px 16px;}
+  .dc-grid{grid-template-columns:repeat(4,1fr);}
+  .msg{max-width:100%;}
+  header{padding:12px 14px;}
+  .brand-name{font-size:15px;}
+}
+@media (max-width:420px){
+  .now-temp{font-size:36px;}
+  .dc-cell{padding:10px 4px;}
+}
+</style>
+</head>
+<body>
+
+<svg id="isobars" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice">
+  <g class="drift">
+    <path d="M-100,120 C200,60 400,180 700,100 S1100,150 1300,80"/>
+    <path d="M-100,220 C250,160 420,280 750,200 S1150,250 1300,180"/>
+    <path d="M-100,320 C220,260 460,380 720,300 S1120,350 1300,280"/>
+    <path d="M-100,480 C260,420 440,540 760,460 S1160,500 1300,440"/>
+    <path d="M-100,600 C230,540 470,660 730,580 S1130,620 1300,560"/>
+    <path d="M-100,700 C250,650 430,760 760,690 S1150,720 1300,660"/>
+  </g>
+</svg>
+
+<div class="app">
+  <header>
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 32 32" fill="none">
+          <circle cx="16" cy="16" r="15" stroke="#E8A33D" stroke-width="1.3" opacity="0.5"/>
+          <path d="M16 6 C16 6 21 13 21 17 A5 5 0 0 1 11 17 C11 13 16 6 16 6 Z" fill="#57B3AC" opacity="0.85"/>
+          <circle cx="16" cy="19" r="1.4" fill="#0E1826"/>
+        </svg>
+      </div>
+      <div class="brand-name">Weather<span class="gpt">GPT</span></div>
+    </div>
+    <div class="loc-select">
+      <span>📍</span>
+      <select id="locationSelect">
+        <option value="austin">Austin, TX</option>
+        <option value="seattle">Seattle, WA</option>
+        <option value="miami">Miami, FL</option>
+        <option value="denver">Denver, CO</option>
+        <option value="chicago">Chicago, IL</option>
+      </select>
+    </div>
+  </header>
+
+  <div class="body-grid">
+    <!-- CONSOLE -->
+    <aside class="console">
+      <div class="console-section">
+        <div class="eyebrow">Current Conditions</div>
+        <div class="now-card">
+          <div class="now-top">
+            <div>
+              <div class="now-temp" id="nowTemp">78<sup>°F</sup></div>
+              <div class="now-cond" id="nowCond">Partly cloudy, light breeze</div>
+            </div>
+            <svg class="now-icon" viewBox="0 0 24 24" fill="none">
+              <circle cx="9" cy="9" r="4" fill="#E8A33D"/>
+              <path d="M13 15a5 5 0 0 0 0-10 6 6 0 0 0-11.3 2.2A4 4 0 0 0 4 15h9Z" fill="#EBF0F7" opacity="0.9"/>
+            </svg>
+          </div>
+          <div class="now-meta">
+            <div>FEELS<span id="nowFeels">81°</span></div>
+            <div>HUMID<span id="nowHumid">54%</span></div>
+            <div>WIND<span id="nowWind">8 mph</span></div>
+            <div>UV<span id="nowUV">6</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="console-section">
+        <div class="eyebrow">Next 8 Hours</div>
+        <div class="hourly-strip" id="hourlyStrip"></div>
+      </div>
+
+      <div class="console-section alerts-section">
+        <div class="eyebrow">Active Alerts</div>
+        <div id="alertsList"></div>
+      </div>
+    </aside>
+
+    <!-- CHAT -->
+    <main class="chat">
+      <div class="chat-scroll" id="chatScroll"></div>
+
+      <div class="suggestions" id="suggestions">
+        <div class="chip" data-q="What's the forecast this weekend?">Weekend forecast</div>
+        <div class="chip" data-q="Do I need an umbrella tomorrow?">Need an umbrella tomorrow?</div>
+        <div class="chip" data-q="Any severe weather alerts nearby?">Severe alerts nearby</div>
+        <div class="chip" data-q="What's the UV index today?">UV index today</div>
+        <div class="chip" data-q="How does this month compare to normal?">Climate vs. normal</div>
+      </div>
+
+      <div class="input-bar">
+        <input type="text" id="chatInput" placeholder="Ask WeatherGPT about forecasts, alerts, or climate…" autocomplete="off">
+        <button class="send-btn" id="sendBtn" aria-label="Send message">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M4 12L20 4L13 20L11 13L4 12Z" fill="#0E1826"/>
+          </svg>
+        </button>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+/* ---------------- mock data per location ---------------- */
+const LOCATIONS = {
+  austin:  { name:"Austin, TX",  temp:78, feels:81, cond:"Partly cloudy, light breeze", humid:54, wind:"8 mph", uv:6,
+    hourly:[76,77,78,80,81,80,77,74], alerts:[{title:"Heat Advisory",desc:"Heat index up to 105°F expected 1–7 PM today. Stay hydrated."}] },
+  seattle: { name:"Seattle, WA", temp:59, feels:58, cond:"Overcast, steady drizzle", humid:82, wind:"11 mph", uv:2,
+    hourly:[58,58,59,60,60,59,57,55], alerts:[] },
+  miami:   { name:"Miami, FL",   temp:88, feels:97, cond:"Scattered thunderstorms", humid:74, wind:"14 mph", uv:9,
+    hourly:[87,88,89,90,88,85,83,82], alerts:[{title:"Flash Flood Watch",desc:"1–3 in. of rain possible through tonight in low-lying areas."},{title:"Small Craft Advisory",desc:"Seas 6–8 ft and winds 20–25 kt through Sunday morning."}] },
+  denver:  { name:"Denver, CO",  temp:64, feels:63, cond:"Sunny, dry air", humid:28, wind:"16 mph", uv:7,
+    hourly:[62,64,66,68,67,63,58,54], alerts:[{title:"Red Flag Warning",desc:"Low humidity and gusty winds elevate fire risk through 8 PM."}] },
+  chicago: { name:"Chicago, IL", temp:71, feels:70, cond:"Clear skies", humid:46, wind:"10 mph", uv:5,
+    hourly:[70,71,73,74,73,70,66,63], alerts:[] }
+};
+
+const WEEKLY = [
+  {day:"Sat", hi:82, lo:66, icon:"sun"},
+  {day:"Sun", hi:85, lo:69, icon:"sun"},
+  {day:"Mon", hi:79, lo:64, icon:"cloud"},
+  {day:"Tue", hi:75, lo:61, icon:"rain"}
+];
+
+let currentLoc = "austin";
+
+/* ---------------- icon helpers ---------------- */
+function iconSVG(type){
+  if(type==="rain") return `<svg viewBox="0 0 24 24" fill="none"><path d="M17 13a5 5 0 0 0 0-10 6 6 0 0 0-11.3 2.2A4 4 0 0 0 6 13h11Z" fill="#9AACC4"/><path d="M8 17l-1 3M12 17l-1 3M16 17l-1 3" stroke="#57B3AC" stroke-width="1.4" stroke-linecap="round"/></svg>`;
+  if(type==="cloud") return `<svg viewBox="0 0 24 24" fill="none"><path d="M17 15a5 5 0 0 0 0-10 6 6 0 0 0-11.3 2.2A4 4 0 0 0 6 15h11Z" fill="#EBF0F7" opacity="0.85"/></svg>`;
+  return `<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="5" fill="#E8A33D"/></svg>`;
+}
+
+/* ---------------- render console ---------------- */
+function renderConsole(){
+  const loc = LOCATIONS[currentLoc];
+  document.getElementById("nowTemp").innerHTML = loc.temp + "<sup>°F</sup>";
+  document.getElementById("nowCond").textContent = loc.cond;
+  document.getElementById("nowFeels").textContent = loc.feels + "°";
+  document.getElementById("nowHumid").textContent = loc.humid + "%";
+  document.getElementById("nowWind").textContent = loc.wind;
+  document.getElementById("nowUV").textContent = loc.uv;
+
+  const strip = document.getElementById("hourlyStrip");
+  const startHour = new Date().getHours();
+  const max = Math.max(...loc.hourly);
+  strip.innerHTML = loc.hourly.map((t,i)=>{
+    const h = (startHour + i + 1) % 24;
+    const label = h===0?"12A":h===12?"12P":h>12?(h-12)+"P":h+"A";
+    const barH = 6 + Math.round((t/max)*22);
+    return `<div class="hour-col">
+      <div class="hour-t">${label}</div>
+      <div class="hour-bar" style="height:${barH}px"></div>
+      <div class="hour-temp">${t}°</div>
+    </div>`;
+  }).join("");
+
+  const alertsList = document.getElementById("alertsList");
+  if(loc.alerts.length === 0){
+    alertsList.innerHTML = `<div class="no-alerts">No active alerts for ${loc.name.split(",")[0]}</div>`;
+  } else {
+    alertsList.innerHTML = loc.alerts.map(a=>`
+      <div class="alert-item" style="margin-bottom:8px;">
+        <div class="alert-dot"></div>
+        <div><h4>${a.title}</h4><p>${a.desc}</p></div>
+      </div>`).join("");
+  }
+}
+
+/* ---------------- chat logic ---------------- */
+const chatScroll = document.getElementById("chatScroll");
+
+function scrollToBottom(){
+  chatScroll.scrollTop = chatScroll.scrollHeight;
+}
+
+function addUserMessage(text){
+  const el = document.createElement("div");
+  el.className = "msg user";
+  el.innerHTML = `<div class="msg-label">You</div><div class="bubble">${escapeHTML(text)}</div>`;
+  chatScroll.appendChild(el);
+  scrollToBottom();
+}
+
+function addBotMessage(html, isCard=false){
+  const el = document.createElement("div");
+  el.className = "msg bot";
+  el.innerHTML = `<div class="msg-label">WeatherGPT</div>${html}`;
+  chatScroll.appendChild(el);
+  scrollToBottom();
+}
+
+function showTyping(){
+  const el = document.createElement("div");
+  el.className = "msg bot";
+  el.id = "typingMsg";
+  el.innerHTML = `<div class="msg-label">WeatherGPT</div><div class="typing"><span></span><span></span><span></span></div>`;
+  chatScroll.appendChild(el);
+  scrollToBottom();
+}
+
+function removeTyping(){
+  const t = document.getElementById("typingMsg");
+  if(t) t.remove();
+}
+
+function escapeHTML(str){
+  const d = document.createElement("div");
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+function weeklyCard(){
+  return `<div class="data-card">
+    <div class="dc-head"><span>4-Day Outlook — ${LOCATIONS[currentLoc].name}</span><span>°F</span></div>
+    <div class="dc-grid">
+      ${WEEKLY.map(d=>`<div class="dc-cell">
+        <div class="d-day">${d.day}</div>
+        ${iconSVG(d.icon)}
+        <div class="d-temp">${d.hi}° <span class="lo">${d.lo}°</span></div>
+      </div>`).join("")}
+    </div>
+  </div>`;
+}
+
+function alertCard(){
+  const loc = LOCATIONS[currentLoc];
+  if(loc.alerts.length===0){
+    return `<div class="data-card"><div class="dc-head"><span>Alert Status</span><span>Clear</span></div>
+      <div style="padding:14px;font-size:13px;color:var(--cloud-dim)">No warnings or watches are currently active for ${loc.name}.</div></div>`;
+  }
+  return loc.alerts.map(a=>`<div class="data-card alert-card">
+    <div class="dc-head"><span>${a.title}</span><span>Active</span></div>
+    <div style="padding:14px;font-size:13px;color:var(--cloud-dim);line-height:1.5">${a.desc}</div>
+  </div>`).join("");
+}
+
+/* ---------------- response engine ---------------- */
+function generateResponse(q){
+  const query = q.toLowerCase();
+  const loc = LOCATIONS[currentLoc];
+
+  if(/weekend|4.day|outlook|week/.test(query)){
+    return { text:`Here's how the next few days shape up in ${loc.name.split(",")[0]}. Temperatures ease slightly by Tuesday as a cooler air mass moves in.`, card:weeklyCard() };
+  }
+  if(/umbrella|rain|wet/.test(query)){
+    const willRain = loc.cond.toLowerCase().includes("rain") || loc.cond.toLowerCase().includes("storm") || loc.cond.toLowerCase().includes("drizzle");
+    return { text: willRain
+      ? `Yes — pack one. ${loc.name.split(",")[0]} has a good chance of precipitation, with conditions described as "${loc.cond.toLowerCase()}." Keep it in your bag through the evening.`
+      : `You should be fine without one. Current conditions in ${loc.name.split(",")[0]} show "${loc.cond.toLowerCase()}" with no rain in the near-term hourly outlook.`,
+      card:null };
+  }
+  if(/alert|warning|watch|severe|advisory/.test(query)){
+    return { text: loc.alerts.length
+      ? `${loc.alerts.length} active alert${loc.alerts.length>1?"s":""} for ${loc.name}. Details below.`
+      : `Good news — no active alerts for ${loc.name} right now. I'll flag anything that comes in.`,
+      card: alertCard() };
+  }
+  if(/uv/.test(query)){
+    const uv = loc.uv;
+    const level = uv>=8?"very high":uv>=6?"high":uv>=3?"moderate":"low";
+    return { text:`Today's UV index in ${loc.name.split(",")[0]} is ${uv} — that's ${level}. ${uv>=6?"Sunscreen and shade breaks are worth it if you're outside midday.":"Minimal protection needed for typical outdoor activity."}`, card:null };
+  }
+  if(/climate|normal|average|compare|trend/.test(query)){
+    return { text:`This month is tracking about 2.3°F above the 30-year seasonal average for ${loc.name.split(",")[0]}, consistent with the broader warming trend seen across the region this year. Rainfall is close to normal, roughly 4% below average so far.`, card:null };
+  }
+  if(/wind/.test(query)){
+    return { text:`Wind in ${loc.name.split(",")[0]} is currently ${loc.wind}, out of the southwest. Gusts should stay under 20 mph through the afternoon.`, card:null };
+  }
+  if(/hot|cold|temp/.test(query)){
+    return { text:`It's ${loc.temp}°F right now in ${loc.name.split(",")[0]}, feeling like ${loc.feels}°F with ${loc.humid}% humidity. ${loc.cond}.`, card:null };
+  }
+  return { text:`Here's the current picture for ${loc.name}: ${loc.temp}°F and ${loc.cond.toLowerCase()}, feels like ${loc.feels}°F. Ask me about the forecast, alerts, UV, or how this month compares to normal for more detail.`, card:null };
+}
+
+function handleSend(text){
+  if(!text || !text.trim()) return;
+  addUserMessage(text.trim());
+  document.getElementById("chatInput").value = "";
+  showTyping();
+  const delay = 650 + Math.random()*500;
+  setTimeout(()=>{
+    removeTyping();
+    const res = generateResponse(text);
+    let html = `<div class="bubble">${res.text}</div>`;
+    if(res.card) html += res.card;
+    addBotMessage(html);
+  }, delay);
+}
+
+/* ---------------- init ---------------- */
+document.getElementById("sendBtn").addEventListener("click", ()=>{
+  handleSend(document.getElementById("chatInput").value);
+});
+document.getElementById("chatInput").addEventListener("keydown", (e)=>{
+  if(e.key==="Enter") handleSend(e.target.value);
+});
+document.querySelectorAll(".chip").forEach(chip=>{
+  chip.addEventListener("click", ()=> handleSend(chip.dataset.q));
+});
+document.getElementById("locationSelect").addEventListener("change", (e)=>{
+  currentLoc = e.target.value;
+  renderConsole();
+  addBotMessage(`<div class="bubble">Switched to ${LOCATIONS[currentLoc].name}. Currently ${LOCATIONS[currentLoc].temp}°F and ${LOCATIONS[currentLoc].cond.toLowerCase()}.</div>`);
+});
+
+renderConsole();
+addBotMessage(`<div class="bubble">Hi, I'm WeatherGPT. Ask me about forecasts, alerts, or climate trends for any location — start by picking a city above, or try one of the prompts below.</div>`);
+</script>
+</body>
+</html>
